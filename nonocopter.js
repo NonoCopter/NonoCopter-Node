@@ -4,47 +4,91 @@ var spawn  = require("child_process").spawn;
 var server = http.createServer(function(req, res) { console.log( "Serveur créé"); });
 var io     = require('socket.io').listen(server);
 
-var config = {};
-config.nodeDir  = "/home/pi/NonoCopter/";
-config.calibDir = config.nodeDir + "calibration/";
-
-var calibreDone = false;
-
 io.sockets.on('connection', function(socket) {
 	console.log( "Client connecté");
-	socket.on( "startCalibration", function( data, callback){
-		if ( calibreDone ){ callback( 2); return; }
-		exec( "sudo python " + config.calibDir + "esc_calibration.py", function (error, stdout, stderr) {						
+	socket.on( "startCalibration", drone.onStartCalibration);	
+	socket.on( "photo",			   drone.onTakePhoto);	
+	socket.on( "video", 		   drone.onTakeVideo);
+	socket.on( "raspberry_halt",   drone.onHaltRaspberry);	
+	socket.on( "raspberry_reboot", drone.onRebootRaspberry);
+	socket.on("disconnect",        drone.onDisconnect);
+});
+server.listen(8080);
+
+var conf = {};
+conf.nodeDir    = "/home/pi/NonoCopter/";
+conf.calibDir   = conf.nodeDir + "calibration/";
+conf.usbDir     = conf.nodeDir + "mnt_usb/";
+conf.photoDir   = conf.usbDir + "photos/";
+conf.unmountCmd = "sudo umount " + conf.usbDir;
+conf.mountCmd   = "sudo mount /dev/sda1 " + conf.usbDir + " -o uid=pi,gid=pi";
+conf.photoCmd   = "raspistill -n --raw -w 2592 -h 1944 -q 100 -t 2000 -th none -vf -hf -ex sports -e jpg -o " + conf.usbDir;
+
+var drone = {
+	calibre : false,
+	
+	onStartCalibration : function( data, callback){
+		if ( drone.calibre ){ callback( 2); return; }
+		exec( "sudo python " + conf.calibDir + "esc_calibration.py", function (error, stdout, stderr) {						
 			if ( !error && !stderr){
-				calibreDone = true;
+				drone.calibre = true;
 				exec( "sudo /home/pi/pi-blaster/./pi-blaster &", function (error, stdout, stderr) {});
 				callback( 1);
 			} else callback( 0);
 			
 		});
-	});	
+	},
 	
-	socket.on( "photo", function( data, callback){
-		
-	});
+	onTakeVideo : function( data, callback){
+		// Todo
+	},
 	
-	socket.on( "video", function( data, callback){
-		
-	});
+	onTakePhoto : function( data, callback){
+		var unmountUSB = function(){ drone.unmountUSB( callback);}
+		var takePhoto  = function(){ drone.takePhoto( data, unmountUSB)}
+		drone.mountUSB( takePhoto);
+	},
 	
-	socket.on( "raspberry_halt", function( data, callback){
-		exec( "sudo halt", function (error, stdout, stderr) {});
-	});
+	takePhoto : function( data, callback){
+		var fileName = ( data ? data : Date.now() )  + ".jpg";
+		exec( conf.photoCmd + fileName, function (error, stdout, stderr) { 
+			console.log( "### photo error  : " + error);
+			console.log( "### photo stdout : " + stdout);
+			console.log( "### photo stderr : " + stderr);
+			if ( callback ) callback( error == null);
+		});
+	},
 	
-	socket.on( "raspberry_reboot", function( data, callback){
+	mountUSB : function( callback){
+		exec( conf.mountCmd, function (error, stdout, stderr) { 
+			console.log( "### mountUSB error  : " + error);
+			console.log( "### mountUSB stdout : " + stdout);
+			console.log( "### mountUSB stderr : " + stderr);
+			if ( callback ) callback( error == null);
+		});
+	},
+	
+	unmountUSB : function( callback){
+		exec( conf.unmountCmd, function (error, stdout, stderr) { 
+			console.log( "### unmountUSB error  : " + error);
+			console.log( "### unmountUSB stdout : " + stdout);
+			console.log( "### unmountUSB stderr : " + stderr);
+			if ( callback ) callback( error == null);
+		});
+	},
+	
+	onRebootRaspberry : function( data, callback){
 		exec( "sudo reboot", function (error, stdout, stderr) {});
-	});
-
-	socket.on('disconnect', function(){
-		console.log( "Client déconnecté");
-	});
-});
-server.listen(8080);
+	},
+	
+	onHaltRaspberry : function( data, callback){
+		exec( "sudo halt", function (error, stdout, stderr) {});
+	},
+	
+	onDisconnect : function( data, callback){
+		// Todo
+	}
+}
 
 
 
