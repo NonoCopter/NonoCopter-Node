@@ -7,8 +7,9 @@ var io     = require('socket.io').listen(server);
 io.sockets.on('connection', function(socket) {
 	console.log( "Client connecté");
 	socket.on( "startCalibration", drone.onStartCalibration);	
-	socket.on( "photo",			   drone.onTakePhoto);	
-	socket.on( "video", 		   drone.onTakeVideo);
+	socket.on( "take_photo",	   drone.onTakePhoto);	
+	socket.on( "start_video", 	   drone.onStartVideo); // Todo
+	socket.on( "stop_video", 	   drone.onStopVideo); // Todo
 	socket.on( "raspberry_halt",   drone.onHaltRaspberry);	
 	socket.on( "raspberry_reboot", drone.onRebootRaspberry);
 	socket.on("disconnect",        drone.onDisconnect);
@@ -22,74 +23,94 @@ conf.usbDir     = conf.nodeDir + "mnt_usb/";
 conf.photoDir   = conf.usbDir + "photos/";
 conf.unmountCmd = "sudo umount " + conf.usbDir;
 conf.mountCmd   = "sudo mount /dev/sda1 " + conf.usbDir + " -o uid=pi,gid=pi";
-conf.photoCmd   = "raspistill -n --raw -w 2592 -h 1944 -q 100 -t 2000 -th none -vf -hf -ex sports -e jpg -o " + conf.usbDir;
+conf.photoCmd   = "raspistill -n --raw -w 2592 -h 1944 -q 100 -vf -hf -t 2000 -th none -ex sports -e jpg -o " + conf.usbDir;
+conf.videoCmd   = "raspivid -n -w 1920 -h 1080 -t 0 -vf -hf -vs -ex sports -o " + conf.usbDir;
+conf.killvidCmd = "pkill raspivid";
+conf.calibCmd   = "sudo python " + conf.calibDir + "esc_calibration.py";
+conf.rebootCmd  = "sudo reboot";
+conf.haltCmd    = "sudo halt";
 
 var drone = {
-	calibre : false,
-	
+	calibre   : false,
+	isCamUsed : false,
 	onStartCalibration : function( data, callback){
 		if ( drone.calibre ){ callback( 2); return; }
-		exec( "sudo python " + conf.calibDir + "esc_calibration.py", function (error, stdout, stderr) {						
+		exec( conf.calibCmd, function( error, stdout, stderr) {						
 			if ( !error && !stderr){
 				drone.calibre = true;
-				exec( "sudo /home/pi/pi-blaster/./pi-blaster &", function (error, stdout, stderr) {});
+				exec( "sudo /home/pi/pi-blaster/./pi-blaster &", function( error, stdout, stderr) {});
 				callback( 1);
 			} else callback( 0);
 			
 		});
 	},
 	
-	onTakeVideo : function( data, callback){
-		// Todo
+	onStartVideo : function( data, callback){
+		if ( drone.isCamUsed ) { callback( false); return; };
+		drone.isCamUsed = true;
+		var _startVideo = function(){ drone._startVideo( data)};
+		drone.mountUSB( _startVideo);
+	},
+	
+	_startVideo : function( data, callback){
+		var fileName = ( data ? data : Date.now() )  + ".h264";
+		exec( conf.videoCmd + fileName, function( error, stdout, stderr) { 
+			if ( callback ) callback( error == null);
+		});
+	},
+	
+	_stopVideo : function( data, callback){
+		exec( conf.killvidCmd, function( error, stdout, stderr) {
+			drone.isCamUsed = false;
+			if ( callback ) callback( error == null);
+		});
+	},
+	
+	onStopVideo : function( data, callback){
+		var _unmountUSB = function(){ drone.unmountUSB( callback);}
+		drone._stopVideo( data, _unmountUSB);
 	},
 	
 	onTakePhoto : function( data, callback){
-		var unmountUSB = function(){ drone.unmountUSB( callback);}
-		var takePhoto  = function(){ drone.takePhoto( data, unmountUSB)}
-		drone.mountUSB( takePhoto);
+		if ( drone.isCamUsed ) { callback( false); return; };
+		drone.isCamUsed = true;
+		var _unmountUSB = function(){ drone.unmountUSB( callback);}
+		var _takePhoto = function(){ drone._takePhoto( data, _unmountUSB)}
+		drone.mountUSB( _takePhoto);
 	},
 	
-	takePhoto : function( data, callback){
+	_takePhoto : function( data, callback){
 		var fileName = ( data ? data : Date.now() )  + ".jpg";
-		exec( conf.photoCmd + fileName, function (error, stdout, stderr) { 
-			console.log( "### photo error  : " + error);
-			console.log( "### photo stdout : " + stdout);
-			console.log( "### photo stderr : " + stderr);
+		exec( conf.photoCmd + fileName, function( error, stdout, stderr) {
+			drone.isCamUsed = false;			
 			if ( callback ) callback( error == null);
 		});
 	},
 	
 	mountUSB : function( callback){
-		exec( conf.mountCmd, function (error, stdout, stderr) { 
-			console.log( "### mountUSB error  : " + error);
-			console.log( "### mountUSB stdout : " + stdout);
-			console.log( "### mountUSB stderr : " + stderr);
+		exec( conf.mountCmd, function( error, stdout, stderr) { 
 			if ( callback ) callback( error == null);
 		});
 	},
 	
 	unmountUSB : function( callback){
-		exec( conf.unmountCmd, function (error, stdout, stderr) { 
-			console.log( "### unmountUSB error  : " + error);
-			console.log( "### unmountUSB stdout : " + stdout);
-			console.log( "### unmountUSB stderr : " + stderr);
+		exec( conf.unmountCmd, function( error, stdout, stderr) { 
 			if ( callback ) callback( error == null);
 		});
 	},
 	
 	onRebootRaspberry : function( data, callback){
-		exec( "sudo reboot", function (error, stdout, stderr) {});
+		exec( conf.rebootCmd);
 	},
 	
 	onHaltRaspberry : function( data, callback){
-		exec( "sudo halt", function (error, stdout, stderr) {});
+		exec( conf.haltCmd);
 	},
 	
 	onDisconnect : function( data, callback){
 		// Todo
 	}
 }
-
 
 
 /*var i2c     = require('i2c-bus');
