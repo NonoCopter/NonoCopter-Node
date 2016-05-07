@@ -9,16 +9,17 @@ io.sockets.on('connection', function(socket) {
 	socket.on( "startCalibration", drone.onStartCalibration);	
 	socket.on( "take_photo",	   drone.onTakePhoto);	
 	socket.on( "start_video", 	   drone.onStartVideo); // Todo
-	socket.on( "stop_video", 	   drone.onStopVideo); // Todo
+	socket.on( "stop_video", 	   drone.onStopVideo);  // Todo
 	socket.on( "raspberry_halt",   drone.onHaltRaspberry);	
 	socket.on( "raspberry_reboot", drone.onRebootRaspberry);
-	socket.on("disconnect",        drone.onDisconnect);
+	socket.on( "move",             drone.onMove);
+	socket.on( "disconnect",       drone.onDisconnect);
 });
 server.listen(8080);
 
 var conf = {};
 conf.nodeDir    = "/home/pi/NonoCopter/";
-conf.calibDir   = conf.nodeDir + "calibration/";
+conf.calibDir   = conf.nodeDir + "motors/";
 conf.usbDir     = conf.nodeDir + "mnt_usb/";
 conf.photoDir   = conf.usbDir + "photos/";
 conf.unmountCmd = "sudo umount " + conf.usbDir;
@@ -27,18 +28,33 @@ conf.photoCmd   = "raspistill -n --raw -w 2592 -h 1944 -q 100 -vf -hf -t 2000 -t
 conf.videoCmd   = "raspivid -n -w 1920 -h 1080 -t 0 -vf -hf -vs -ex sports -o " + conf.usbDir;
 conf.killvidCmd = "pkill raspivid";
 conf.calibCmd   = "sudo python " + conf.calibDir + "esc_calibration.py";
+conf.speedCmd   = "sudo python " + conf.calibDir + "speed.py ";
 conf.rebootCmd  = "sudo reboot";
 conf.haltCmd    = "sudo halt";
 
 var drone = {
 	calibre   : false,
 	isCamUsed : false,
+	
+	onMove : function( data, callback){
+		if (data ) exec( conf.speedCmd + "10 10 10 10" , function( error, stdout, stderr) {	
+			console.log( "error  :" + error );
+			console.log( "stdout :" + stdout );
+			console.log( "stderr :" + stderr );
+		});
+		else 
+		exec( conf.speedCmd + "4 4 4 4" , function( error, stdout, stderr) {	
+			console.log( "error  :" + error );
+			console.log( "stdout :" + stdout );
+			console.log( "stderr :" + stderr );
+		});
+	},
+	
 	onStartCalibration : function( data, callback){
 		if ( drone.calibre ){ callback( 2); return; }
 		exec( conf.calibCmd, function( error, stdout, stderr) {						
 			if ( !error && !stderr){
 				drone.calibre = true;
-				exec( "sudo /home/pi/pi-blaster/./pi-blaster &", function( error, stdout, stderr) {});
 				callback( 1);
 			} else callback( 0);
 			
